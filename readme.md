@@ -8,8 +8,8 @@ A deployed, agentic application that accepts multiple input types simultaneously
 
 | Service | URL |
 |---------|-----|
-| **Frontend (Streamlit)** | `https://agentic-frontend.onrender.com` |
-| **Backend (FastAPI)** | `https://agentic-backend.onrender.com` |
+| **Frontend (Streamlit)** | `https://agentic-frontend-qe33.onrender.com` |
+| **Backend (FastAPI)** | `https://muitimodal-agent.onrender.com` |
 | **API Docs** | `https://agentic-backend.onrender.com/docs` |
 
 ---
