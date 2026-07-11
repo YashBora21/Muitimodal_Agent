@@ -113,7 +113,7 @@ faiss_index/
 # Docker
 # ==========================
 docker-compose.yml
-Dockerfile
+
 Dockerfile-frontend
 # ==========================
 # Misc
