@@ -6,6 +6,7 @@ Requires the FastAPI backend running at http://localhost:8000
 
 import streamlit as st
 import requests
+import os 
 
 # ── Page config ──────────────────────────────────────────────
 st.set_page_config(
@@ -149,7 +150,10 @@ if "history" not in st.session_state:
 if "last_response" not in st.session_state:
     st.session_state.last_response = None
 
-BACKEND = "http://localhost:8000"
+BACKEND = os.getenv(
+    "BACKEND_URL",
+    "http://localhost:8000"
+)
 
 # ── Header ───────────────────────────────────────────────────
 st.markdown("""
@@ -163,21 +167,31 @@ st.markdown("""
 # ── Sidebar ──────────────────────────────────────────────────
 with st.sidebar:
     st.markdown('<div class="sidebar-label">Backend</div>', unsafe_allow_html=True)
-    backend_url = st.text_input("API URL", value=BACKEND, label_visibility="collapsed")
+    backend_url = st.text_input(
+        "Backend URL",
+        value=BACKEND,
+        label_visibility="collapsed",
+        disabled=True
+    )
 
     try:
-        health = requests.get(f"{backend_url}/health", timeout=3).json()
-        st.markdown(f"""
-        <div style="display:flex;align-items:center;gap:0.5rem;font-size:0.78rem;color:#34d399;
-                    background:#0d1f1a;border:1px solid #134e4a;border-radius:6px;padding:0.4rem 0.7rem;">
-            <span>●</span> Connected · <span style="color:#64748b">{health.get('llm_provider','?')}</span>
-        </div>""", unsafe_allow_html=True)
-    except Exception:
-        st.markdown("""
-        <div style="display:flex;align-items:center;gap:0.5rem;font-size:0.78rem;color:#ef4444;
-                    background:#1c0a0a;border:1px solid #7f1d1d;border-radius:6px;padding:0.4rem 0.7rem;">
-            <span>●</span> Backend offline
-        </div>""", unsafe_allow_html=True)
+        health = requests.get(
+            f"{backend_url}/health",
+            timeout=5
+        )
+
+        if health.status_code == 200:
+            health = health.json()
+
+            st.success(
+                f"Connected • {health.get('llm_provider','Unknown')}"
+            )
+
+        else:
+            st.error("Backend is not healthy.")
+
+    except Exception as e:
+      st.error(f"Backend Offline\n\n{e}")
 
     st.markdown('<div class="sidebar-label">Upload Files</div>', unsafe_allow_html=True)
     pdf_file   = st.file_uploader("PDF",   type=["pdf"],              label_visibility="collapsed", key="pdf")
