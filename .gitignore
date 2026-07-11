@@ -1,0 +1,123 @@
+# ==========================
+# Python
+# ==========================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+
+# Environment Variables
+.env
+.env.*
+!.env.example
+
+# ==========================
+# IDE
+# ==========================
+.vscode/
+.idea/
+*.swp
+
+# ==========================
+# OS Files
+# ==========================
+.DS_Store
+Thumbs.db
+
+# ==========================
+# Logs
+# ==========================
+*.log
+logs/
+
+# ==========================
+# Pytest / Coverage
+# ==========================
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.cache/
+
+# ==========================
+# Build
+# ==========================
+build/
+dist/
+*.egg-info/
+
+# ==========================
+# Temporary Files
+# ==========================
+temp/
+tmp/
+*.tmp
+*.temp
+
+# ==========================
+# Uploaded/Test Files
+# ==========================
+*.mp3
+*.wav
+*.m4a
+*.ogg
+*.flac
+
+*.pdf
+*.docx
+*.pptx
+
+*.png
+*.jpg
+*.jpeg
+*.gif
+
+# Uncomment if you DON'T want to track test fixtures
+# tests/fixtures/
+
+# ==========================
+# Models
+# ==========================
+models/
+checkpoints/
+weights/
+
+# Whisper cache
+.whisper/
+
+# HuggingFace cache
+.huggingface/
+cache/
+hf_cache/
+
+# ==========================
+# Vector Stores
+# ==========================
+faiss_index/
+*.faiss
+*.index
+*.db
+
+# ==========================
+# SQLite
+# ==========================
+*.sqlite
+*.sqlite3
+
+# ==========================
+# Docker
+# ==========================
+docker-compose.yml
+Dockerfile
+Dockerfile-frontend
+# ==========================
+# Misc
+# ==========================
+*.bak
+*.old
+*.orig
