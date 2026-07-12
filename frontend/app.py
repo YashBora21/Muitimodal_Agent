@@ -20,7 +20,23 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-#MainMenu, footer, header { visibility: hidden; }
+
+/* Hide menu + footer, but KEEP header (it holds the sidebar re-expand arrow) */
+#MainMenu, footer { visibility: hidden; }
+header[data-testid="stHeader"] {
+    background: transparent;
+    box-shadow: none;
+}
+/* Make sure the sidebar collapse/expand control stays visible & styled */
+[data-testid="collapsedControl"] {
+    visibility: visible !important;
+    display: flex !important;
+    color: #e2e8f0 !important;
+}
+[data-testid="collapsedControl"] svg {
+    fill: #e2e8f0 !important;
+}
+
 .stApp { background: #0f1117; color: #e2e8f0; }
 .app-header {
     background: linear-gradient(90deg, #1a1f2e 0%, #141824 100%);
