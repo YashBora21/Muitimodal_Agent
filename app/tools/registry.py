@@ -58,16 +58,9 @@ def _audio_transcribe(state: AgentState) -> str:
 def _youtube_transcript(state: AgentState) -> str:
     if not state.youtube_urls:
         raise ValueError("no YouTube URL was found to fetch")
-
-    result = youtube_tool(state.youtube_urls[0])
-
-    state.youtube_transcript = result["transcript"]
-    state.youtube_metadata = result["metadata"]
-
-    return (
-        f"Fetched transcript using {result['source']} "
-        f"({len(result['transcript'])} chars)"
-    )
+    text = fetch_transcript(state.youtube_urls[0])
+    state.youtube_transcript = text
+    return f"fetched transcript ({len(text)} chars)"
 
 
 # ---- LLM-only tools: fully working right now ----
