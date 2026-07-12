@@ -1,12 +1,11 @@
 """
 Streamlit UI for the Multimodal Agentic Assistant.
 Run with: streamlit run frontend/app.py
-Requires the FastAPI backend running at http://localhost:8000
 """
 
+import os
 import streamlit as st
 import requests
-import os 
 
 # ── Page config ──────────────────────────────────────────────
 st.set_page_config(
@@ -20,12 +19,9 @@ st.set_page_config(
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
-
 html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 #MainMenu, footer, header { visibility: hidden; }
-
 .stApp { background: #0f1117; color: #e2e8f0; }
-
 .app-header {
     background: linear-gradient(90deg, #1a1f2e 0%, #141824 100%);
     border-bottom: 1px solid #2d3748;
@@ -39,21 +35,17 @@ html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
     font-size: 0.7rem; font-weight: 600; padding: 0.2rem 0.5rem;
     border-radius: 999px; letter-spacing: 0.05em; text-transform: uppercase;
 }
-
 section[data-testid="stSidebar"] { background: #141824 !important; border-right: 1px solid #1e2535 !important; }
 section[data-testid="stSidebar"] .block-container { padding: 1.5rem 1rem; }
-
 .sidebar-label {
     font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
     letter-spacing: 0.1em; color: #4a5568; margin-bottom: 0.5rem; margin-top: 1.25rem;
 }
-
 .file-pill {
     display: inline-flex; align-items: center; gap: 0.4rem;
     background: #1a1f2e; border: 1px solid #2d3748; border-radius: 999px;
     padding: 0.25rem 0.75rem; font-size: 0.75rem; color: #94a3b8; margin: 0.2rem;
 }
-
 .chat-bubble {
     background: #1a1f2e; border: 1px solid #2d3748; border-radius: 12px;
     padding: 1rem 1.25rem; margin-bottom: 0.75rem; font-size: 0.9rem; line-height: 1.6;
@@ -63,7 +55,6 @@ section[data-testid="stSidebar"] .block-container { padding: 1.5rem 1rem; }
 .chat-bubble .role { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.4rem; }
 .chat-bubble.user .role { color: #818cf8; }
 .chat-bubble.assistant .role { color: #34d399; }
-
 .trace-step {
     display: flex; align-items: center; gap: 0.6rem;
     padding: 0.5rem 0.75rem; border-radius: 8px; margin-bottom: 0.35rem;
@@ -79,7 +70,6 @@ section[data-testid="stSidebar"] .block-container { padding: 1.5rem 1rem; }
 .trace-step .status-skipped { color: #f59e0b; }
 .trace-step .duration { color: #4a5568; margin-left: auto; }
 .trace-step .msg { color: #64748b; }
-
 .answer-box {
     background: #0d1f1a; border: 1px solid #134e4a; border-radius: 10px;
     padding: 1.25rem; font-size: 0.9rem; line-height: 1.7; color: #d1fae5; white-space: pre-wrap;
@@ -89,7 +79,6 @@ section[data-testid="stSidebar"] .block-container { padding: 1.5rem 1rem; }
     font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
     letter-spacing: 0.08em; padding: 0.2rem 0.6rem; border-radius: 999px; margin-bottom: 0.75rem;
 }
-
 .extracted-box {
     background: #141824; border: 1px solid #2d3748; border-radius: 10px; padding: 1rem;
     font-size: 0.78rem; font-family: 'JetBrains Mono', monospace; color: #94a3b8;
@@ -99,12 +88,10 @@ section[data-testid="stSidebar"] .block-container { padding: 1.5rem 1rem; }
     font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
     letter-spacing: 0.08em; color: #4a5568; margin-bottom: 0.4rem;
 }
-
 .warn-box {
     background: #1c1407; border: 1px solid #78350f; border-radius: 8px;
     padding: 0.75rem 1rem; font-size: 0.8rem; color: #fbbf24; margin-bottom: 0.5rem;
 }
-
 .cost-bar {
     background: #1a1f2e; border: 1px solid #2d3748; border-radius: 10px;
     padding: 0.75rem 1.25rem; display: flex; align-items: center;
@@ -114,30 +101,30 @@ section[data-testid="stSidebar"] .block-container { padding: 1.5rem 1rem; }
 .cost-label { font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #4a5568; }
 .cost-value { font-size: 0.95rem; font-weight: 600; color: #e2e8f0; font-family: 'JetBrains Mono', monospace; }
 .cost-value.green { color: #34d399; }
-
+.context-badge {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    background: #1e1b4b; border: 1px solid #3730a3; border-radius: 6px;
+    padding: 0.3rem 0.7rem; font-size: 0.75rem; color: #818cf8; margin-bottom: 0.75rem;
+}
 div[data-testid="stButton"] > button {
     background: linear-gradient(135deg, #7c3aed, #6d28d9); color: white; border: none;
     border-radius: 8px; font-weight: 600; font-size: 0.9rem; padding: 0.6rem 1.5rem;
     width: 100%; transition: opacity 0.2s;
 }
 div[data-testid="stButton"] > button:hover { opacity: 0.85; }
-
 .stTabs [data-baseweb="tab-list"] {
     background: #141824; border-radius: 8px; padding: 0.25rem; gap: 0.25rem; border: 1px solid #1e2535;
 }
 .stTabs [data-baseweb="tab"] { background: transparent; color: #64748b; border-radius: 6px; font-size: 0.8rem; font-weight: 600; }
 .stTabs [aria-selected="true"] { background: #1e2535 !important; color: #e2e8f0 !important; }
-
 .stTextArea textarea {
     background: #141824 !important; border: 1px solid #2d3748 !important;
     border-radius: 10px !important; color: #e2e8f0 !important;
     font-family: 'Inter', sans-serif !important; font-size: 0.9rem !important;
 }
 .stTextArea textarea:focus { border-color: #7c3aed !important; box-shadow: 0 0 0 2px #7c3aed22 !important; }
-
 hr { border-color: #1e2535 !important; }
 .stSpinner > div { border-top-color: #7c3aed !important; }
-
 .empty-state { text-align: center; padding: 3rem 1rem; color: #4a5568; }
 .empty-state .icon { font-size: 2.5rem; margin-bottom: 0.75rem; }
 .empty-state p { font-size: 0.85rem; line-height: 1.6; }
@@ -150,10 +137,7 @@ if "history" not in st.session_state:
 if "last_response" not in st.session_state:
     st.session_state.last_response = None
 
-BACKEND = os.getenv(
-    "BACKEND_URL",
-    "http://localhost:8000"
-)
+BACKEND = os.getenv("BACKEND_URL", "http://localhost:8000")
 
 # ── Header ───────────────────────────────────────────────────
 st.markdown("""
@@ -167,31 +151,21 @@ st.markdown("""
 # ── Sidebar ──────────────────────────────────────────────────
 with st.sidebar:
     st.markdown('<div class="sidebar-label">Backend</div>', unsafe_allow_html=True)
-    backend_url = st.text_input(
-        "Backend URL",
-        value=BACKEND,
-        label_visibility="collapsed",
-        disabled=True
-    )
+    backend_url = st.text_input("API URL", value=BACKEND, label_visibility="collapsed")
 
     try:
-        health = requests.get(
-            f"{backend_url}/health",
-            timeout=5
-        )
-
-        if health.status_code == 200:
-            health = health.json()
-
-            st.success(
-                f"Connected • {health.get('llm_provider','Unknown')}"
-            )
-
-        else:
-            st.error("Backend is not healthy.")
-
-    except Exception as e:
-      st.error(f"Backend Offline\n\n{e}")
+        health = requests.get(f"{backend_url}/health", timeout=3).json()
+        st.markdown(f"""
+        <div style="display:flex;align-items:center;gap:0.5rem;font-size:0.78rem;color:#34d399;
+                    background:#0d1f1a;border:1px solid #134e4a;border-radius:6px;padding:0.4rem 0.7rem;">
+            <span>●</span> Connected · <span style="color:#64748b">{health.get('llm_provider','?')}</span>
+        </div>""", unsafe_allow_html=True)
+    except Exception:
+        st.markdown("""
+        <div style="display:flex;align-items:center;gap:0.5rem;font-size:0.78rem;color:#ef4444;
+                    background:#1c0a0a;border:1px solid #7f1d1d;border-radius:6px;padding:0.4rem 0.7rem;">
+            <span>●</span> Backend offline
+        </div>""", unsafe_allow_html=True)
 
     st.markdown('<div class="sidebar-label">Upload Files</div>', unsafe_allow_html=True)
     pdf_file   = st.file_uploader("PDF",   type=["pdf"],              label_visibility="collapsed", key="pdf")
@@ -204,10 +178,7 @@ with st.sidebar:
     if audio_file: attached.append(("🎵", audio_file.name))
 
     if attached:
-        pills_html = "".join(
-            f'<span class="file-pill">{icon} {name}</span>'
-            for icon, name in attached
-        )
+        pills_html = "".join(f'<span class="file-pill">{icon} {name}</span>' for icon, name in attached)
         st.markdown(f'<div style="margin-top:0.5rem">{pills_html}</div>', unsafe_allow_html=True)
 
     st.markdown('<div class="sidebar-label">History</div>', unsafe_allow_html=True)
@@ -225,6 +196,22 @@ with st.sidebar:
             st.session_state.last_response = None
             st.rerun()
 
+
+def _get_context_from_history() -> str:
+    """Pull extracted text from the most recent response for follow-up queries."""
+    if not st.session_state.history:
+        return ""
+    last = st.session_state.history[-1]
+    extracted = last["response"].get("extracted", {})
+    parts = [
+        v for k, v in extracted.items()
+        if isinstance(v, str) and v.strip()
+    ]
+    if not parts:
+        return ""
+    return "\n\n[Context from previous upload]:\n" + "\n\n".join(parts)[:3000]
+
+
 # ── Main workspace ───────────────────────────────────────────
 with st.container():
 
@@ -238,7 +225,7 @@ with st.container():
                 {item['query']}
             </div>""", unsafe_allow_html=True)
 
-            result = item["response"].get("result") or {}
+            result  = item["response"].get("result") or {}
             content = result.get("content", "—")
             preview = str(content)[:300] + ("…" if len(str(content)) > 300 else "")
             st.markdown(f"""
@@ -250,6 +237,17 @@ with st.container():
 
     # ── Prompt input ──────────────────────────────────────────
     st.markdown('<p class="sidebar-label">Your prompt</p>', unsafe_allow_html=True)
+
+    # Show context badge when no files attached but history has extracted content
+    no_files = not any([pdf_file, image_file, audio_file])
+    has_prev_context = bool(st.session_state.history and _get_context_from_history())
+
+    if no_files and has_prev_context:
+        st.markdown(
+            '<div class="context-badge">🔗 Using context from previous upload</div>',
+            unsafe_allow_html=True
+        )
+
     query = st.text_area(
         "Query",
         placeholder="Ask a question, request a summary, explain code… or just chat.",
@@ -270,16 +268,22 @@ with st.container():
                 if image_file: files["image"] = (image_file.name, image_file, image_file.type)
                 if audio_file: files["audio"] = (audio_file.name, audio_file, audio_file.type)
 
+                # Append previous extracted context for follow-up queries
+                final_query = query
+                if no_files and has_prev_context:
+                    final_query = query + "\n\n" + _get_context_from_history()
+
                 try:
                     resp = requests.post(
                         f"{backend_url}/run",
-                        data={"query": query},
+                        data={"query": final_query},
                         files=files,
                         timeout=300,
                     )
                     resp.raise_for_status()
                     data = resp.json()
                     st.session_state.last_response = data
+                    # Store original query (not with appended context) for display
                     st.session_state.history.append({"query": query, "response": data})
                     st.rerun()
                 except requests.exceptions.ConnectionError:
@@ -322,7 +326,6 @@ with st.container():
         # ── Tabs ──────────────────────────────────────────────
         tab1, tab2, tab3 = st.tabs(["⚡ Execution Trace", "📄 Extracted Text", "✅ Final Answer"])
 
-        # ── Tab 1: Trace ──────────────────────────────────────
         with tab1:
             trace    = resp_data.get("trace", [])
             warnings = resp_data.get("warnings", [])
@@ -337,13 +340,10 @@ with st.container():
                     status = step.get("status", "?")
                     msg    = step.get("message", "")
                     dur    = step.get("duration_ms", 0)
-
-                    icon         = {"ok": "✓", "failed": "✗", "skipped": "⊘"}.get(status, "?")
-                    status_class = f"status-{status}"
-
+                    icon   = {"ok": "✓", "failed": "✗", "skipped": "⊘"}.get(status, "?")
                     st.markdown(f"""
                     <div class="trace-step {status}">
-                        <span class="{status_class}">{icon}</span>
+                        <span class="status-{status}">{icon}</span>
                         <span class="tool-name">{tool}</span>
                         <span class="msg">{msg[:80]}</span>
                         <span class="duration">{dur:.0f}ms</span>
@@ -351,7 +351,6 @@ with st.container():
             else:
                 st.markdown('<div class="empty-state"><div class="icon">🔍</div><p>No trace yet.</p></div>', unsafe_allow_html=True)
 
-        # ── Tab 2: Extracted text ─────────────────────────────
         with tab2:
             extracted = resp_data.get("extracted", {})
             has_any   = False
@@ -379,13 +378,11 @@ with st.container():
             if not has_any:
                 st.markdown('<div class="empty-state"><div class="icon">📭</div><p>No files were extracted in this run.</p></div>', unsafe_allow_html=True)
 
-        # ── Tab 3: Final answer ───────────────────────────────
         with tab3:
             result = resp_data.get("result")
             if result:
                 rtype   = result.get("type", "response")
                 content = result.get("content", "")
-
                 type_labels = {
                     "summary":              "📋 Summary",
                     "code_explanation":     "💻 Code Explanation",
