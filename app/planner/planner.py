@@ -151,12 +151,7 @@ def build_plan(state: AgentState) -> Plan:
         "discuss", "both", "agree", "overlap",
     ]
 
-    # DEBUG - move this BEFORE the if check
-    print(f"DEBUG: has_pdf={has_pdf} has_audio={has_audio} has_image={has_image}")
-    print(f"DEBUG: file_paths keys={list(state.file_paths.keys())}")
-    print(f"DEBUG: q={q!r}")
-    print(f"DEBUG: file count={sum([has_pdf, has_audio, has_image])}")
-    print(f"DEBUG: keyword match={any(w in q for w in compare_words)}")
+    
 
     if sum([has_pdf, has_audio, has_image]) >= 2 and any(
         w in q for w in compare_words
@@ -183,7 +178,38 @@ def build_plan(state: AgentState) -> Plan:
             intent="compare",
             steps=steps,
         )
+    # Add as section 6.5, before the LLM fallback:
 
+    # ------------------------------------------
+    # 6.5 PDF attached with any query → extract first
+    # ------------------------------------------
+    if has_pdf and not any(
+            w in q for w in ["youtube", "video", "transcript"]
+        ):
+            client = get_llm_client()
+            raw = client.complete(system=SYSTEM_PROMPT, user=user_prompt, json_mode=True)
+            try:
+                llm_plan = Plan(**json.loads(raw))
+                answer_steps = [s for s in llm_plan.steps if s.tool not in {
+                    "pdf_extract", "image_ocr", "audio_transcribe"
+                }]
+                return Plan(
+                    needs_clarification=False,
+                    question=None,
+                    intent=llm_plan.intent,
+                    steps=[PlanStep(tool="pdf_extract")] + answer_steps,
+                )
+            except Exception:
+                # Fallback — just extract + summarize
+                return Plan(
+                    needs_clarification=False,
+                    question=None,  
+                    intent="extract_and_answer",
+                    steps=[
+                        PlanStep(tool="pdf_extract"),
+                        PlanStep(tool="conversational"),
+                    ],
+                )
     # ------------------------------------------
     # 6. Let the LLM decide
     # ------------------------------------------
