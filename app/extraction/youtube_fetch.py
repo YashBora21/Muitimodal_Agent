@@ -6,7 +6,15 @@ from youtube_transcript_api import (
     VideoUnavailable,
     YouTubeTranscriptApi,
 )
-from youtube_transcript_api._errors import IpBlocked, RequestBlocked
+
+try:
+    from youtube_transcript_api._errors import IpBlocked, RequestBlocked
+except ImportError:
+    class IpBlocked(Exception):
+        pass
+
+    class RequestBlocked(Exception):
+        pass
 
 VIDEO_ID_RE = re.compile(r"(?:v=|youtu\.be/)([\w-]{11})")
 
