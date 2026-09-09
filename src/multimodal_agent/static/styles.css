@@ -1,0 +1,130 @@
+body {
+  max-width: 900px;
+  margin: auto;
+  padding: 24px;
+  color: #18202b;
+  background: #f6f7fb;
+  font: 16px system-ui;
+}
+
+h1 {
+  font-size: 1.45rem;
+}
+
+.chat {
+  min-height: 300px;
+  padding-bottom: 8px;
+}
+
+.msg {
+  margin: 10px 0;
+  padding: 12px 15px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  background: white;
+  border-radius: 14px;
+}
+
+.user {
+  margin-left: 15%;
+  background: #dcecff;
+}
+
+.agent {
+  margin-right: 5%;
+  overflow: hidden;
+  white-space: normal;
+}
+
+.meta {
+  color: #566;
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+}
+
+.agent p {
+  margin: 0.6em 0;
+}
+
+.agent ul,
+.agent ol {
+  margin: 0.4em 0;
+  padding-left: 1.4em;
+}
+
+.agent table {
+  display: block;
+  width: 100%;
+  margin: 0.6em 0;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.agent th,
+.agent td {
+  padding: 6px 10px;
+  border: 1px solid #d7dce3;
+  text-align: left;
+  vertical-align: top;
+}
+
+.agent th {
+  background: #f0f2f6;
+}
+
+.agent code {
+  padding: 1px 5px;
+  background: #f0f2f6;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.agent pre {
+  padding: 10px;
+  overflow-x: auto;
+  background: #f0f2f6;
+  border-radius: 8px;
+}
+
+form {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  padding: 12px 0;
+  background: #f6f7fb;
+  border-top: 1px solid #dce1e8;
+}
+
+textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 70px;
+  padding: 10px;
+}
+
+.row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+button {
+  padding: 9px 18px;
+  color: white;
+  background: #1769e0;
+  border: 0;
+  border-radius: 8px;
+}
+
+details {
+  margin: 8px 0;
+  padding: 8px 12px;
+  background: white;
+  border-radius: 8px;
+}
+
+.error {
+  color: #a00;
+}
