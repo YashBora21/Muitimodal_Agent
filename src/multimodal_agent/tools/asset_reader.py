@@ -3,9 +3,11 @@ from typing import Any
 import fitz
 
 from ..extraction.image import vision
-from ..extraction.pdf import pdf_page, relevant_pdf_pages
+from ..extraction.pdf import pdf_page
 from ..extraction.youtube import youtube_text
+from ..config import RETRIEVAL_TOP_K
 from ..models import Asset
+from ..retrieval import hybrid_search, needs_hybrid_retrieval
 
 
 def run_tool(
@@ -59,6 +61,15 @@ def run_tool(
 
     if visual:
         return "visual=true requires a PDF page_number."
-    if asset["kind"] == "pdf" and query:
-        return relevant_pdf_pages(content, query)
+    if query and needs_hybrid_retrieval(asset["kind"], content):
+        if asset.get("db_id"):
+            from .. import database
+
+            if database.enabled():
+                result = database.hybrid_search(
+                    asset["db_id"], query, RETRIEVAL_TOP_K
+                )
+                if result:
+                    return result
+        return hybrid_search(content, query)
     return content

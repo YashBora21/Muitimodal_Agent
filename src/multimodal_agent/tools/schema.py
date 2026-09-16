@@ -24,8 +24,8 @@ TOOLS: list[dict[str, Any]] = [
                     "query": {
                         "type": ["string", "null"],
                         "description": (
-                            "For PDFs, the question or keywords used to find "
-                            "relevant pages."
+                            "Question or keywords used to retrieve relevant "
+                            "content from PDFs and long transcripts."
                         ),
                     },
                     "page_number": {

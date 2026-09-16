@@ -6,3 +6,8 @@ openai
 langgraph
 PyMuPDF
 yt-dlp
+sentence-transformers
+psycopg[binary,pool]
+pgvector
+PyJWT
+argon2-cffi

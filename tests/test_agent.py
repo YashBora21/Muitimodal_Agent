@@ -85,6 +85,10 @@ def test_tools_are_only_sent_when_assets_exist(monkeypatch):
     assert "tools" not in calls[0]
     assert "tool_choice" not in calls[0]
     assert calls[1]["tool_choice"] == "auto"
+    assert any(
+        "Grounding evidence from image-3" in message["content"]
+        for message in calls[1]["messages"]
+    )
     assert len(calls[1]["tools"]) == 1
     assert calls[1]["tools"][0]["function"]["name"] == "read_asset"
     assert "[current upload]" in calls[1]["messages"][0]["content"]
@@ -311,3 +315,190 @@ def test_graph_keeps_assets_for_follow_up(monkeypatch):
     )
 
     assert seen[-1][1][0]["id"] == "pdf-1"
+
+
+def test_hybrid_retrieval_keeps_relevant_tail_content(monkeypatch):
+    from multimodal_agent import retrieval
+
+    monkeypatch.setattr(retrieval, "CHUNK_SIZE", 120)
+    monkeypatch.setattr(retrieval, "CHUNK_OVERLAP", 20)
+    monkeypatch.setattr(retrieval, "_semantic_ranks", lambda parts, query: [])
+    content = ("irrelevant introduction " * 30) + "Section 302 IPC punishment is life imprisonment."
+
+    result = retrieval.hybrid_search(content, "Section 302 IPC punishment", top_k=2)
+
+    assert "life imprisonment" in result
+    assert "content shortened" not in result
+
+
+def test_agent_passes_complete_tool_result(monkeypatch):
+    api_calls = []
+    complete_result = "\n".join(
+        f"--- Page {page} ---\n" + "grounded evidence " * 120
+        for page in range(1, 7)
+    )
+
+    class Completions:
+        def create(self, **kwargs):
+            api_calls.append(kwargs)
+            if len(api_calls) == 2:
+                assert kwargs["messages"][-1]["content"] == complete_result
+                message = SimpleNamespace(content="grounded answer", tool_calls=[])
+            else:
+                tool_call = SimpleNamespace(
+                    id="call-1",
+                    function=SimpleNamespace(
+                        name="read_asset",
+                        arguments='{"asset_id": "pdf-1", "query": "evidence"}',
+                    ),
+                    model_dump=lambda: {
+                        "id": "call-1",
+                        "type": "function",
+                        "function": {
+                            "name": "read_asset",
+                            "arguments": '{"asset_id": "pdf-1", "query": "evidence"}',
+                        },
+                    },
+                )
+                message = SimpleNamespace(content="", tool_calls=[tool_call])
+            return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+
+    monkeypatch.setattr(
+        graph_module,
+        "client",
+        lambda: SimpleNamespace(chat=SimpleNamespace(completions=Completions())),
+    )
+    monkeypatch.setattr(graph_module, "run_tool", lambda *args: complete_result)
+    asset = {
+        "id": "pdf-1",
+        "kind": "pdf",
+        "name": "evidence.pdf",
+        "content": complete_result,
+    }
+
+    result = graph_module.run_agent("Find evidence", [asset], [], ["pdf-1"])
+
+    assert result["answer"] == "grounded answer"
+    assert api_calls[0]["tool_choice"] == "auto"
+    assert api_calls[1]["tool_choice"] == "auto"
+    assert any("Grounding | pdf-1 preloaded" in log for log in result["logs"])
+    assert any("Retrieval | pdf-1 | hybrid" in log for log in result["logs"])
+
+
+def test_pdf_discovered_youtube_assets_are_not_preloaded(monkeypatch):
+    seen = []
+    discovered_assets = [
+        {
+            "id": "pdf-1",
+            "kind": "pdf",
+            "name": "links.pdf",
+            "content": "A PDF with two video references.",
+        },
+        {
+            "id": "youtube-1",
+            "kind": "youtube",
+            "name": "https://youtu.be/one",
+            "content": "",
+        },
+        {
+            "id": "youtube-2",
+            "kind": "youtube",
+            "name": "https://youtu.be/two",
+            "content": "",
+        },
+    ]
+
+    monkeypatch.setattr(
+        graph_module,
+        "ingest_upload",
+        lambda upload, existing: discovered_assets,
+    )
+    monkeypatch.setattr(
+        graph_module,
+        "run_agent",
+        lambda request, assets, history, current_asset_ids: (
+            seen.append((assets, current_asset_ids))
+            or {"answer": "ok", "decision": "answer", "logs": []}
+        ),
+    )
+    graph = graph_module.build_graph()
+
+    graph.invoke(
+        {
+            "request": "What is this PDF about?",
+            "uploads": [{"name": "links.pdf", "data": b"pdf"}],
+        },
+        {"configurable": {"thread_id": "lazy-youtube"}},
+    )
+
+    assert len(seen[0][0]) == 3
+    assert seen[0][1] == ["pdf-1"]
+
+
+
+def test_rag_threshold_requires_large_pdf_with_more_than_five_pages():
+    from multimodal_agent.retrieval import needs_hybrid_retrieval
+
+    five_page_pdf = "\n".join(
+        f"--- Page {page} ---\n" + "content " * 300
+        for page in range(1, 6)
+    )
+    six_page_pdf = five_page_pdf + "\n--- Page 6 ---\n" + "content " * 300
+
+    assert len(five_page_pdf) > 10_000
+    assert not needs_hybrid_retrieval("pdf", five_page_pdf)
+    assert needs_hybrid_retrieval("pdf", six_page_pdf)
+    assert needs_hybrid_retrieval("youtube", "transcript " * 1000)
+
+
+def test_database_asset_uses_persistent_hybrid_search(monkeypatch):
+    from multimodal_agent import database
+
+    content = "\n".join(
+        f"--- Page {page} ---\n" + "evidence " * 250
+        for page in range(1, 7)
+    )
+    asset = {
+        "db_id": "00000000-0000-0000-0000-000000000001",
+        "id": "pdf-1",
+        "kind": "pdf",
+        "name": "large.pdf",
+        "content": content,
+    }
+    monkeypatch.setattr(database, "enabled", lambda: True)
+    monkeypatch.setattr(database, "hybrid_search", lambda *args: "database evidence")
+
+    result = asset_reader.run_tool(
+        "read_asset",
+        {"asset_id": "pdf-1", "query": "evidence"},
+        {"pdf-1": asset},
+    )
+
+    assert result == "database evidence"
+
+
+def test_thread_management_routes_are_registered():
+    from multimodal_agent.app import app
+
+    routes = {
+        (route.path, method)
+        for route in app.routes
+        for method in getattr(route, "methods", set())
+    }
+
+    assert ("/threads", "POST") in routes
+    assert ("/threads", "GET") in routes
+    assert ("/threads/{thread_id}", "GET") in routes
+    assert ("/threads/{thread_id}", "DELETE") in routes
+    assert ("/chat", "POST") in routes
+
+def test_health_route_is_registered():
+    from multimodal_agent.app import app
+
+    routes = {
+        (route.path, method)
+        for route in app.routes
+        for method in getattr(route, "methods", set())
+    }
+
+    assert ("/health", "GET") in routes

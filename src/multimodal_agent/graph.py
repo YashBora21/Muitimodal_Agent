@@ -7,12 +7,13 @@ from typing import Any
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 
-from .config import MAX_ITERATIONS, MODEL, TOOL_RESULT_LIMIT, client
+from .config import MAX_ITERATIONS, MODEL, client
 from .extraction.youtube import youtube_urls
 from .ingest import ingest_upload
 from .models import Asset, State
 from .prompts import AGENT_SYSTEM_PROMPT
 from .registry import asset_index, compact, new_asset
+from .retrieval import needs_hybrid_retrieval
 from .tools import TOOLS, run_tool
 
 logger = logging.getLogger(__name__)
@@ -48,19 +49,42 @@ def run_agent(
 ) -> dict[str, Any]:
     asset_by_id = {a["id"]: a for a in assets}
     current_asset_ids = current_asset_ids or []
+    logs: list[str] = []
+    tool_results: dict[str, str] = {}  # dedupe identical tool calls within this request
+    grounding_messages: list[dict[str, str]] = []
+    for asset_id in current_asset_ids:
+        args = {"asset_id": asset_id, "query": request.strip() or None}
+        result = run_tool("read_asset", args, asset_by_id)
+        cache_key = json.dumps(["read_asset", args], sort_keys=True, default=str)
+        tool_results[cache_key] = result
+        grounding_messages.append({
+            "role": "system",
+            "content": f"Grounding evidence from {asset_id}:\n\n{result}",
+        })
+        asset = asset_by_id[asset_id]
+        mode = (
+            "hybrid keyword + semantic retrieval"
+            if args["query"]
+            and needs_hybrid_retrieval(asset["kind"], asset.get("content", ""))
+            else "full asset read"
+        )
+        logs.append(f"Grounding | {asset_id} preloaded before model response")
+        logs.append(f"Retrieval | {asset_id} | {mode}")
+
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": AGENT_SYSTEM_PROMPT.format(index=asset_index(assets, current_asset_ids))},
         *history,
+        *grounding_messages,
         {"role": "user", "content": request or "[uploaded files, no message]"},
     ]
-    logs: list[str] = []
-    tool_results: dict[str, str] = {}  # dedupe identical tool calls within this request
-
     for _ in range(MAX_ITERATIONS):
         try:
             completion_args: dict[str, Any] = {"model": MODEL, "messages": messages, "max_tokens": 2000}
             if assets:  # no tool-schema token cost for plain conversational turns
-                completion_args.update(tools=TOOLS, tool_choice="auto")
+                completion_args.update(
+                    tools=TOOLS,
+                    tool_choice="auto",
+                )
             response = client().chat.completions.create(**completion_args)
             log_token_usage(response, messages, logs)
         except Exception as e:
@@ -95,11 +119,28 @@ def run_agent(
                 result = run_tool(name, args, asset_by_id)
                 tool_results[cache_key] = result
                 logs.append(f"tool: {name}({args})")
+                if name == "read_asset":
+                    if args.get("page_number") is not None:
+                        mode = f"exact page {args['page_number']}"
+                    elif (
+                        args.get("query")
+                        and args.get("asset_id") in asset_by_id
+                        and needs_hybrid_retrieval(
+                            asset_by_id[args["asset_id"]]["kind"],
+                            asset_by_id[args["asset_id"]].get("content", ""),
+                        )
+                    ):
+                        mode = "hybrid keyword + semantic retrieval"
+                    else:
+                        mode = "full asset read"
+                    logs.append(
+                        f"Retrieval | {args.get('asset_id', 'unknown')} | {mode}"
+                    )
 
             messages.append({
                 "role": "tool",
                 "tool_call_id": tc.id,
-                "content": compact(result, TOOL_RESULT_LIMIT),
+                "content": result,
             })
 
     logs.append("hit MAX_ITERATIONS without a final answer")
@@ -110,22 +151,27 @@ def run_agent(
     }
 
 
-def build_graph():
+def build_graph(use_memory: bool = True):
 
     def ingest(state: State) -> dict[str, Any]:
         existing = state.get("assets", [])
         added: list[Asset] = []
+        current_asset_ids: list[str] = []
 
         for upload in state.get("uploads", []):
-            added.extend(ingest_upload(upload, existing + added))
+            upload_assets = ingest_upload(upload, existing + added)
+            added.extend(upload_assets)
+            if upload_assets:
+                current_asset_ids.append(upload_assets[0]["id"])
 
         for url in youtube_urls(state.get("request", "")):
             if not any(a["name"] == url for a in existing + added):
-                added.append(new_asset(existing + added, "youtube", url, ""))
-
+                asset = new_asset(existing + added, "youtube", url, "")
+                added.append(asset)
+                current_asset_ids.append(asset["id"])
         return {
             "assets": added,
-            "current_asset_ids": [a["id"] for a in added],
+            "current_asset_ids": current_asset_ids,
             "uploads": [],
             "extracted": compact("\n\n".join(a.get("content", "") for a in added), 15_000),
             "logs": ["assets extracted"],
@@ -135,7 +181,7 @@ def build_graph():
         request = state.get("request", "").strip()
         assets = state.get("assets", [])
         history = [
-            {"role": m["role"], "content": m["content"][-300:]}
+            {"role": m["role"], "content": m["content"]}
             for m in state.get("messages", [])[-6:]
         ]
 
@@ -159,7 +205,10 @@ def build_graph():
     builder.add_edge("ingest", "agent")
     builder.add_edge("agent", END)
 
-    return builder.compile(checkpointer=InMemorySaver())
+    if use_memory:
+        return builder.compile(checkpointer=InMemorySaver())
+    return builder.compile()
 
 
 graph = build_graph()
+stateless_graph = build_graph(use_memory=False)

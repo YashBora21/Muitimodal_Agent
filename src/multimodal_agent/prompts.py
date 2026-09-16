@@ -20,7 +20,7 @@ For images:
 - Read the selected image asset before answering.
 
 For audio and YouTube:
-- Read the transcript before answering.
+- Read the transcript with a query that reflects the user's question before answering.
 - YouTube transcripts are downloaded only when first requested.
 
 Available assets:

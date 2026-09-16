@@ -4,7 +4,8 @@ import fitz
 
 from ..config import TESSDATA
 from ..models import Asset
-from ..registry import compact, new_asset
+from ..registry import new_asset
+from ..retrieval import hybrid_search
 from .youtube import YOUTUBE_RE, youtube_id
 
 
@@ -64,36 +65,7 @@ def read_pdf(data: bytes, name: str, existing: list[Asset]) -> list[Asset]:
 
 
 def relevant_pdf_pages(content: str, query: str) -> str:
-    pages = re.split(r"(?=--- Page \d+ ---)", content)
-    ignored = {
-        "what",
-        "when",
-        "where",
-        "which",
-        "that",
-        "this",
-        "from",
-        "with",
-        "have",
-    }
-    terms = {
-        token
-        for token in re.findall(r"[\w-]+", query.lower())
-        if (token.isdigit() or len(token) > 3) and token not in ignored
-    }
-    ranked = sorted(
-        (
-            (
-                sum(page.lower().count(term) for term in terms),
-                page,
-            )
-            for page in pages
-            if page.strip()
-        ),
-        reverse=True,
-    )
-    matches = [compact(page, 3000) for score, page in ranked if score][:2]
-    return "\n\n".join(matches) or "No pages matched that query."
+    return hybrid_search(content, query)
 
 
 def pdf_page(content: str, page_number: int) -> str | None:

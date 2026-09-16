@@ -36,3 +36,5 @@ Thumbs.db
 
 # Created accidentally by running npm in the static directory
 src/multimodal_agent/static/package-lock.json
+.neon
+node_modules/
