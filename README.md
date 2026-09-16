@@ -312,37 +312,7 @@ In the service's **Settings > Health Checks**, set:
 
 Render will send `GET /health` periodically. A `200` response means the FastAPI process can query Neon. A `503` response prevents a broken instance from receiving traffic and can trigger a restart.
 
-Render requires HTTP health checks to respond within five seconds, so keep this endpoint lightweight.
 
-## 6. Deploy
-
-Select **Create Web Service** or **Manual Deploy > Deploy latest commit**. After deployment, verify:
-
-```text
-https://<your-service>.onrender.com/health
-https://<your-service>.onrender.com/docs
-https://<your-service>.onrender.com/
-```
-
-## Render Native Runtime Limitations
-
-The core application, authentication, text PDFs, image analysis, direct audio transcription, and caption-based YouTube extraction can run on Render's native Python runtime.
-
-Two fallback paths require OS-level programs:
-
-- Scanned-PDF OCR requires Tesseract and its `eng` language data.
-- YouTube audio fallback requires FFmpeg.
-
-Render recommends Docker when an application requires OS packages not included in its native runtime. For full OCR and YouTube fallback support in production, deploy this repository as a Docker service with Tesseract and FFmpeg installed in the image. Do not set the Windows `TESSDATA_PREFIX` value on Linux.
-
-Render free web services can spin down after inactivity, so the first request after an idle period can be slower. The local SentenceTransformer embedding model also increases memory usage; monitor memory and move to a larger instance if the process is terminated for exceeding its limit.
-
-Official references:
-
-- [Deploying on Render](https://render.com/docs/deploys)
-- [Render health checks](https://render.com/docs/health-checks)
-- [Render Python versions](https://render.com/docs/python-version)
-- [Docker on Render](https://render.com/docs/docker)
 
 ## Security Notes
 
