@@ -251,44 +251,36 @@ Current suite: 20 tests.
 
 # Deploy on Render
 
-The simplest deployment uses one Render Web Service because FastAPI serves both the frontend and backend.
+Use one Docker Web Service because FastAPI serves both the frontend and backend. The included `Dockerfile` installs Tesseract OCR, English language data, FFmpeg, Python 3.11, and all Python dependencies.
 
-## 1. Push the repository
+## 1. Push the Repository
 
 Push the project to GitHub, GitLab, or Bitbucket. Do not commit `.env`, API keys, JWT secrets, Neon credentials, or YouTube cookies.
 
-## 2. Create a Web Service
+## 2. Create a Docker Web Service
 
 In the Render dashboard:
 
 1. Select **New > Web Service**.
 2. Connect the repository.
 3. Select the production branch.
-4. Choose the **Python** runtime.
-5. Leave **Root Directory** empty when this repository is the project root.
+4. Choose the **Docker** runtime.
+5. Leave **Root Directory** empty.
 
-## 3. Configure build and start commands
-
-Build command:
-
-```bash
-pip install -r requirements.txt
-```
-
-Start command:
-
-```bash
-uvicorn app:app --host 0.0.0.0 --port $PORT
-```
-
-Do not use `--reload` in production. Render provides the `PORT` environment variable and requires the service to bind to `0.0.0.0`.
-
-## 4. Add environment variables
-
-Add these in **Environment > Environment Variables**:
+## 3. Configure Docker
 
 ```text
-PYTHON_VERSION=3.11.11
+Dockerfile Path: ./Dockerfile
+Docker Build Context Directory: .
+```
+
+Leave **Docker Command** empty. Render will use the `CMD` from `Dockerfile`, which starts Uvicorn on Render's `PORT`.
+
+## 4. Add Environment Variables
+
+Add these under **Environment > Environment Variables**:
+
+```text
 GROQ_API_KEY=<secret>
 DATABASE_URL=<Neon pooled URL>
 DATABASE_URL_UNPOOLED=<Neon direct URL>
@@ -296,27 +288,26 @@ JWT_SECRET=<long random secret>
 JWT_EXPIRE_MINUTES=30
 DB_POOL_SIZE=5
 MAX_FILE_MB=25
+TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata
 ```
 
-Optional model and RAG settings can use the defaults listed in the local `.env` example.
+Optional model and RAG settings can use the defaults listed in the local `.env` example. `PYTHON_VERSION` is not needed because the Docker image already uses Python 3.11.
 
-Never add secrets directly to `README.md`, `render.yaml`, or source code.
+Never add secrets directly to `README.md`, `Dockerfile`, or source code.
 
-## 5. Configure the health check
+## 5. Configure the Health Check
 
-In the service's **Settings > Health Checks**, set:
+In **Settings > Health Checks**, set:
 
 ```text
 /health
 ```
 
-Render will send `GET /health` periodically. A `200` response means the FastAPI process can query Neon. A `503` response prevents a broken instance from receiving traffic and can trigger a restart.
-
-Render requires HTTP health checks to respond within five seconds, so keep this endpoint lightweight.
+Render sends `GET /health` periodically. A `200` response means FastAPI can query Neon. A `503` response prevents an unhealthy instance from receiving traffic.
 
 ## 6. Deploy
 
-Select **Create Web Service** or **Manual Deploy > Deploy latest commit**. After deployment, verify:
+Select **Create Web Service** or **Manual Deploy > Deploy latest commit**. Then verify:
 
 ```text
 https://<your-service>.onrender.com/health
@@ -324,26 +315,27 @@ https://<your-service>.onrender.com/docs
 https://<your-service>.onrender.com/
 ```
 
-## Render Native Runtime Limitations
+## Docker Image Details
 
-The core application, authentication, text PDFs, image analysis, direct audio transcription, and caption-based YouTube extraction can run on Render's native Python runtime.
+The image includes:
 
-Two fallback paths require OS-level programs:
+- `tesseract-ocr` and `tesseract-ocr-eng` for scanned PDFs
+- `ffmpeg` and `ffprobe` for audio and YouTube fallback processing
+- CPU-only PyTorch to avoid downloading CUDA libraries
+- A non-root application user
+- Linux `TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata`
 
-- Scanned-PDF OCR requires Tesseract and its `eng` language data.
-- YouTube audio fallback requires FFmpeg.
+Do not use `C:\Program Files\Tesseract-OCR\tessdata` on Render. Render environment variables override Dockerfile defaults, so remove that Windows value or replace it with the Linux path above.
 
-Render recommends Docker when an application requires OS packages not included in its native runtime. For full OCR and YouTube fallback support in production, deploy this repository as a Docker service with Tesseract and FFmpeg installed in the image. Do not set the Windows `TESSDATA_PREFIX` value on Linux.
+The `.dockerignore` file prevents local secrets, virtual environments, Git data, caches, and YouTube cookies from entering the image.
 
-Render free web services can spin down after inactivity, so the first request after an idle period can be slower. The local SentenceTransformer embedding model also increases memory usage; monitor memory and move to a larger instance if the process is terminated for exceeding its limit.
+Render free web services can spin down after inactivity, so the first request after an idle period can be slower. The local SentenceTransformer model also uses significant memory; use a larger instance if the process exceeds its memory limit.
 
 Official references:
 
 - [Deploying on Render](https://render.com/docs/deploys)
 - [Render health checks](https://render.com/docs/health-checks)
-- [Render Python versions](https://render.com/docs/python-version)
 - [Docker on Render](https://render.com/docs/docker)
-
 ## Security Notes
 
 - Keep `.env` and cookie files out of Git.
