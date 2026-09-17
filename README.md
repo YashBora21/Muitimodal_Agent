@@ -1,4 +1,4 @@
-# Context-aware Multimodal Agent
+﻿# Context-aware Multimodal Agent
 
 A ChatGPT-style multimodal assistant built with FastAPI, LangGraph, Groq, Neon PostgreSQL, and pgvector. Users can register, sign in, keep separate conversation threads, upload files, and ask grounded questions about PDFs, images, audio, and YouTube videos.
 
@@ -344,3 +344,4 @@ Official references:
 - Keep `DATABASE_URL` pooled and reserve `DATABASE_URL_UNPOOLED` for schema operations.
 - Uploaded raw files are currently stored in PostgreSQL. Monitor database size and move large binaries to object storage when storage growth becomes significant.
 - The JWT is stored in browser `localStorage`; avoid introducing unsafe JavaScript or unsanitized HTML.
+
