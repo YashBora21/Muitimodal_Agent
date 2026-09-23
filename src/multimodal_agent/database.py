@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import os
 import re
@@ -316,6 +316,3 @@ def hybrid_search(asset_id: str, query: str, top_k: int) -> str | None:
                 (query, asset_id, query, query, top_k, str(vector), asset_id, str(vector), top_k, top_k),
             ).fetchall()
     return "\n\n---\n\n".join(row[0] for row in rows) if rows else None
-
-
-

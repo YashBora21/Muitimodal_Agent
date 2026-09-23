@@ -53,9 +53,7 @@ async def log_request_time(request: Request, call_next):
         response.status_code,
         duration,
     )
-
     return response
-
 class Credentials(BaseModel):
     email: str
     password: str
@@ -125,7 +123,7 @@ def register(credentials: Credentials):
     try:
         user = database.create_user(credentials.email, hash_password(credentials.password), credentials.display_name)
     except Exception as error:
-        raise HTTPException(400, "An account with this email already exists.") from error
+        raise error
     return login_response(user)
 
 

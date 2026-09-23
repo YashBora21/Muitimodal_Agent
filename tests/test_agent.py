@@ -502,3 +502,10 @@ def test_health_route_is_registered():
     }
 
     assert ("/health", "GET") in routes
+
+
+def test_database_clean_text_removes_postgres_unsafe_characters():
+    from multimodal_agent.database import clean_text
+
+    value = "hello\x00world\x01\n\t!" + chr(0xD800)
+    assert clean_text(value) == "helloworld\n\t!?"
