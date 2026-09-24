@@ -1,4 +1,4 @@
-from typing import Any
+﻿from typing import Any
 
 
 TOOLS: list[dict[str, Any]] = [
@@ -28,6 +28,15 @@ TOOLS: list[dict[str, Any]] = [
                             "content from PDFs and long transcripts."
                         ),
                     },
+                    "scope": {
+                        "type": ["string", "null"],
+                        "enum": ["auto", "focused", "whole", None],
+                        "description": (
+                            "Use whole for summaries or overviews of all content, "
+                            "focused for a specific question, and auto otherwise."
+                        ),
+                        "default": "auto",
+                    },
                     "page_number": {
                         "type": ["integer", "null"],
                         "minimum": 1,
@@ -47,3 +56,4 @@ TOOLS: list[dict[str, Any]] = [
         },
     }
 ]
+

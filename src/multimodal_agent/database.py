@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import logging
 import os
 import re
 from pathlib import Path
@@ -10,15 +11,25 @@ from dotenv import load_dotenv
 from .models import Asset
 from .retrieval import chunks, needs_hybrid_retrieval
 
+logger = logging.getLogger(__name__)
 
 load_dotenv()
+
 
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 DIRECT_DATABASE_URL = os.getenv("DATABASE_URL_UNPOOLED", DATABASE_URL)
 POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "5"))
 SCHEMA_PATH = Path(__file__).resolve().parents[2] / "database" / "schema.sql"
 PAGE_RE = re.compile(r"(?m)^--- Page (\d+) ---$")
+UNSAFE_TEXT_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _pool = None
+
+
+def clean_text(value: str | None) -> str:
+    if not value:
+        return ""
+    valid_unicode = value.encode("utf-8", errors="replace").decode("utf-8")
+    return UNSAFE_TEXT_RE.sub("", valid_unicode)
 
 
 def enabled() -> bool:
@@ -56,6 +67,8 @@ def init_db() -> None:
 
 
 def create_user(email: str, password_hash: str, display_name: str | None) -> dict[str, str]:
+    email = clean_text(email).lower()
+    display_name = clean_text(display_name) or None
     with connect() as connection:
         row = connection.execute(
             """
@@ -63,7 +76,7 @@ def create_user(email: str, password_hash: str, display_name: str | None) -> dic
             VALUES (%s, %s, %s)
             RETURNING id::text, email, COALESCE(display_name, '')
             """,
-            (email.lower(), password_hash, display_name),
+            (email, password_hash, display_name),
         ).fetchone()
     return {"id": row[0], "email": row[1], "display_name": row[2]}
 
@@ -72,7 +85,7 @@ def user_by_email(email: str) -> dict[str, str] | None:
     with connect() as connection:
         row = connection.execute(
             "SELECT id::text, email, password_hash, COALESCE(display_name, '') FROM users WHERE email = %s",
-            (email.lower(),),
+            (clean_text(email).lower(),),
         ).fetchone()
     if not row:
         return None
@@ -89,6 +102,7 @@ def user_by_id(user_id: str) -> dict[str, str] | None:
 
 
 def create_thread(user_id: str, title: str = "New Conversation") -> dict[str, str]:
+    title = clean_text(title)
     with connect() as connection:
         row = connection.execute(
             """
@@ -167,6 +181,7 @@ def delete_thread(thread_id: str, user_id: str) -> bool:
     return result.rowcount > 0
 
 def ensure_thread(thread_id: str, user_id: str, title: str) -> None:
+    title = clean_text(title)
     with connect() as connection:
         owner = connection.execute(
             "SELECT user_id::text, title FROM threads WHERE id = %s", (thread_id,)
@@ -211,6 +226,7 @@ def load_thread(thread_id: str, user_id: str) -> tuple[list[Asset], list[dict[st
         }
         for row in asset_rows
     ]
+    logger.info("Database | thread loaded thread=%s assets=%s messages=%s", thread_id, len(assets), len(message_rows))
     return assets, [{"role": row[0], "content": row[1]} for row in message_rows]
 
 
@@ -224,8 +240,10 @@ def _vectors(parts: list[str]) -> list[list[float] | None]:
 
 
 def save_assets(thread_id: str, assets: list[Asset]) -> None:
+    saved_chunks = 0
     with connect() as connection:
         for asset in assets:
+            content = clean_text(asset.get("content", ""))
             row = connection.execute(
                 """
                 INSERT INTO assets (
@@ -237,14 +255,13 @@ def save_assets(thread_id: str, assets: list[Asset]) -> None:
                 RETURNING id::text
                 """,
                 (
-                    thread_id, asset["id"], asset["kind"], asset["name"],
-                    asset.get("content", ""), asset.get("data"),
+                    thread_id, clean_text(asset["id"]), clean_text(asset["kind"]), clean_text(asset["name"]),
+                    content, asset.get("data"),
                     len(asset.get("data", b"")),
                 ),
             ).fetchone()
             asset["db_id"] = row[0]
-            content = asset.get("content", "")
-            if not needs_hybrid_retrieval(asset["kind"], content):
+            if not needs_hybrid_retrieval(content):
                 continue
             exists = connection.execute(
                 "SELECT 1 FROM asset_chunks WHERE asset_id = %s LIMIT 1", (row[0],)
@@ -262,9 +279,41 @@ def save_assets(thread_id: str, assets: list[Asset]) -> None:
                     """,
                     (row[0], index, part, page_number, str(vector) if vector else None),
                 )
+                saved_chunks += 1
+    logger.info("Database | assets saved thread=%s assets=%s chunks=%s", thread_id, len(assets), saved_chunks)
+
+
+def update_asset_content(asset: Asset) -> None:
+    content = clean_text(asset.get("content", ""))
+    asset_id = asset.get("db_id")
+    if not asset_id:
+        return
+    saved_chunks = 0
+    with connect() as connection:
+        connection.execute(
+            "UPDATE assets SET content_text = %s WHERE id = %s",
+            (content, asset_id),
+        )
+        connection.execute("DELETE FROM asset_chunks WHERE asset_id = %s", (asset_id,))
+        if needs_hybrid_retrieval(content):
+            parts = chunks(content)
+            for index, (part, vector) in enumerate(zip(parts, _vectors(parts))):
+                page_match = PAGE_RE.search(part)
+                page_number = int(page_match.group(1)) if page_match else None
+                connection.execute(
+                    """
+                    INSERT INTO asset_chunks (asset_id, chunk_index, content, page_number, embedding)
+                    VALUES (%s, %s, %s, %s, %s::vector)
+                    """,
+                    (asset_id, index, part, page_number, str(vector) if vector else None),
+                )
+                saved_chunks += 1
+    logger.info("Database | lazy asset persisted asset=%s chunks=%s", asset_id, saved_chunks)
 
 
 def save_messages(thread_id: str, request: str, answer: str) -> None:
+    request = clean_text(request)
+    answer = clean_text(answer)
     with connect() as connection:
         connection.execute(
             "INSERT INTO messages (thread_id, role, content) VALUES (%s, 'user', %s)",
@@ -275,9 +324,11 @@ def save_messages(thread_id: str, request: str, answer: str) -> None:
             (thread_id, answer),
         )
         connection.execute("UPDATE threads SET updated_at = NOW() WHERE id = %s", (thread_id,))
+    logger.info("Database | messages saved thread=%s user_chars=%s answer_chars=%s", thread_id, len(request), len(answer))
 
 
 def hybrid_search(asset_id: str, query: str, top_k: int) -> str | None:
+    query = clean_text(query)
     try:
         vector = _vectors([query])[0]
     except Exception:
@@ -315,4 +366,5 @@ def hybrid_search(asset_id: str, query: str, top_k: int) -> str | None:
                 """,
                 (query, asset_id, query, query, top_k, str(vector), asset_id, str(vector), top_k, top_k),
             ).fetchall()
+    logger.info("Retrieval | database asset=%s mode=%s matches=%s top_k=%s", asset_id, "keyword" if vector is None else "hybrid", len(rows), top_k)
     return "\n\n---\n\n".join(row[0] for row in rows) if rows else None

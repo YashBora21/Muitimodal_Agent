@@ -1,13 +1,15 @@
-from typing import Any
+﻿from typing import Any
 
 import fitz
 
+from .. import database
+from ..config import RETRIEVAL_TOP_K, WHOLE_DOCUMENT_QUERY
 from ..extraction.image import vision
 from ..extraction.pdf import pdf_page
 from ..extraction.youtube import youtube_text
-from ..config import RETRIEVAL_TOP_K
 from ..models import Asset
-from ..retrieval import hybrid_search, needs_hybrid_retrieval
+from ..retrieval import needs_hybrid_retrieval, retrieval_scope
+
 
 
 def run_tool(
@@ -26,6 +28,7 @@ def run_tool(
 
     if asset["kind"] == "youtube" and not asset.get("content"):
         asset["content"] = youtube_text(asset["name"])
+        database.update_asset_content(asset)
 
     content = asset.get("content") or "(empty)"
     query = str(args.get("query") or "").strip()
@@ -33,11 +36,7 @@ def run_tool(
     visual = args.get("visual") is True
 
     if asset["kind"] == "pdf" and page_number is not None:
-        if (
-            isinstance(page_number, bool)
-            or not isinstance(page_number, int)
-            or page_number < 1
-        ):
+        if isinstance(page_number, bool) or not isinstance(page_number, int) or page_number < 1:
             return "page_number must be a positive integer."
 
         page_content = pdf_page(content, page_number)
@@ -61,15 +60,22 @@ def run_tool(
 
     if visual:
         return "visual=true requires a PDF page_number."
-    if query and needs_hybrid_retrieval(asset["kind"], content):
-        if asset.get("db_id"):
-            from .. import database
+    if not needs_hybrid_retrieval(content):
+        return content
+    if not asset.get("db_id"):
+        raise RuntimeError(f"Asset {asset_id!r} has not been persisted.")
 
-            if database.enabled():
-                result = database.hybrid_search(
-                    asset["db_id"], query, RETRIEVAL_TOP_K
-                )
-                if result:
-                    return result
-        return hybrid_search(content, query)
-    return content
+    scope = retrieval_scope(query, str(args.get("scope") or "auto"))
+    if scope == "whole":
+        overview_query = " ".join(
+            part for part in (query, WHOLE_DOCUMENT_QUERY) if part
+        )
+        result = database.hybrid_search(
+            asset["db_id"], overview_query, RETRIEVAL_TOP_K
+        )
+        return result or "No content matched the document overview query."
+    if not query:
+        return "A query is required to search a long asset with focused scope."
+    result = database.hybrid_search(asset["db_id"], query, RETRIEVAL_TOP_K)
+    return result or "No content matched that query."
+

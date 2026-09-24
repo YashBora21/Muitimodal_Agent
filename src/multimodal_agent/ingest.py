@@ -1,3 +1,4 @@
+import logging
 import mimetypes
 from pathlib import Path
 from typing import Any
@@ -7,6 +8,8 @@ from .extraction.image import vision
 from .extraction.pdf import read_pdf
 from .models import Asset
 from .registry import new_asset
+
+logger = logging.getLogger(__name__)
 
 
 def ingest_upload(
@@ -20,17 +23,22 @@ def ingest_upload(
         or mimetypes.guess_type(name)[0]
         or "application/octet-stream"
     )
+    logger.info("Extraction | start name=%s mime=%s bytes=%s", name, mime, len(data))
 
     if mime.startswith("image/"):
-        return [new_asset(existing, "image", name, vision(data, mime))]
+        assets = [new_asset(existing, "image", name, vision(data, mime))]
+        logger.info("Extraction | complete kind=image assets=%s chars=%s", len(assets), len(assets[0]["content"]))
+        return assets
 
     if mime == "application/pdf" or name.lower().endswith(".pdf"):
-        return read_pdf(data, name, existing)
+        assets = read_pdf(data, name, existing)
+        logger.info("Extraction | complete kind=pdf assets=%s chars=%s", len(assets), sum(len(asset.get("content", "")) for asset in assets))
+        return assets
 
     audio_extensions = {".mp3", ".wav", ".m4a", ".mp4", ".mpeg", ".webm"}
     if mime.startswith("audio/") or Path(name).suffix.lower() in audio_extensions:
         content, duration = transcribe(data, name)
-        return [
+        assets = [
             new_asset(
                 existing,
                 "audio",
@@ -39,5 +47,8 @@ def ingest_upload(
                 duration=duration,
             )
         ]
+        logger.info("Extraction | complete kind=audio assets=%s chars=%s", len(assets), len(content))
+        return assets
 
+    logger.warning("Extraction | unsupported name=%s mime=%s", name, mime)
     raise ValueError(f"Unsupported file: {name}")

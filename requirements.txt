@@ -3,10 +3,10 @@ uvicorn[standard]
 python-multipart
 python-dotenv
 openai
-langgraph
 PyMuPDF
 yt-dlp
 sentence-transformers
+langchain-text-splitters
 psycopg[binary,pool]
 pgvector
 PyJWT

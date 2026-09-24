@@ -5,7 +5,6 @@ import fitz
 from ..config import TESSDATA
 from ..models import Asset
 from ..registry import new_asset
-from ..retrieval import hybrid_search
 from .youtube import YOUTUBE_RE, youtube_id
 
 
@@ -63,9 +62,6 @@ def read_pdf(data: bytes, name: str, existing: list[Asset]) -> list[Asset]:
         assets.append(new_asset(existing + assets, "youtube", url, ""))
     return assets
 
-
-def relevant_pdf_pages(content: str, query: str) -> str:
-    return hybrid_search(content, query)
 
 
 def pdf_page(content: str, page_number: int) -> str | None:

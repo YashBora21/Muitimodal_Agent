@@ -1,6 +1,6 @@
 ﻿# Context-aware Multimodal Agent
 
-A ChatGPT-style multimodal assistant built with FastAPI, LangGraph, Groq, Neon PostgreSQL, and pgvector. Users can register, sign in, keep separate conversation threads, upload files, and ask grounded questions about PDFs, images, audio, and YouTube videos.
+A ChatGPT-style multimodal assistant built with FastAPI, Groq, Neon PostgreSQL, and pgvector. Users can register, sign in, keep separate conversation threads, upload files, and ask grounded questions about PDFs, images, audio, and YouTube videos.
 
 ## Features
 
@@ -24,7 +24,7 @@ Browser UI
     v
 FastAPI
     |-- JWT authentication
-    |-- LangGraph agent
+    |-- Tool-calling agent
     |-- Groq chat, vision, and transcription APIs
     |
     v
@@ -50,7 +50,7 @@ GENAI_Intern/
 |   |-- auth.py                    # Password hashing and JWT helpers
 |   |-- config.py                  # Environment-based configuration
 |   |-- database.py                # PostgreSQL access and connection pool
-|   |-- graph.py                   # LangGraph workflow and model loop
+|   |-- graph.py                   # Tool-calling model loop
 |   |-- ingest.py                  # Upload routing
 |   |-- retrieval.py               # Chunking and hybrid retrieval
 |   |-- extraction/                # PDF, image, audio, YouTube extraction
@@ -115,8 +115,13 @@ CHUNK_SIZE=1000
 CHUNK_OVERLAP=200
 RETRIEVAL_TOP_K=6
 RAG_MIN_CHARS=10000
-RAG_MIN_PDF_PAGES=5
 EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+
+CHAT_HISTORY_MESSAGES=12
+MAX_ITERATIONS=8
+AGENT_MAX_TOKENS=2000
+WHOLE_DOCUMENT_QUERY=main topic abstract introduction methodology results conclusion contributions
+WHOLE_DOCUMENT_TERMS=summarize,summary,overview,main points,key points,what is this about,what is the document about,entire document,whole document
 
 TESSDATA_PREFIX=C:\Program Files\Tesseract-OCR\tessdata
 ```
@@ -136,7 +141,9 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 | `DATABASE_URL_UNPOOLED` | Neon direct connection used for schema initialization |
 | `JWT_SECRET` | Signs and verifies access tokens |
 
-The remaining variables have defaults and are optional.
+The remaining variables have defaults and are optional. Retrieval is based on `RAG_MIN_CHARS`, regardless of file type. Short assets are read in full; long assets use PostgreSQL full-text search plus pgvector. Whole-document requests retrieve a configurable set of representative chunks using `WHOLE_DOCUMENT_QUERY` and `WHOLE_DOCUMENT_TOP_K`. `WHOLE_DOCUMENT_TERMS` can be customized for other languages or product wording.
+
+The database is required. If it is missing or unavailable, authenticated APIs return `503` instead of extracting files or switching to an in-memory fallback.
 
 ## Neon Database
 

@@ -97,8 +97,9 @@ def test_tools_are_only_sent_when_assets_exist(monkeypatch):
 def test_tool_schema_has_pdf_text_and_visual_modes():
     assert len(TOOLS) == 1
     properties = TOOLS[0]["function"]["parameters"]["properties"]
-    assert set(properties) == {"asset_id", "query", "page_number", "visual"}
+    assert set(properties) == {"asset_id", "query", "scope", "page_number", "visual"}
     assert properties["query"]["type"] == ["string", "null"]
+    assert properties["scope"]["enum"] == ["auto", "focused", "whole", None]
     assert properties["page_number"]["type"] == ["integer", "null"]
     assert properties["visual"]["type"] == ["boolean", "null"]
 
@@ -285,51 +286,32 @@ def test_run_tool_fetches_only_the_requested_youtube(monkeypatch):
     assert fetched == ["https://youtu.be/two"]
 
 
-def test_graph_keeps_assets_for_follow_up(monkeypatch):
-    seen = []
 
-    def fake_agent(request, assets, history, current_asset_ids):
-        seen.append((request, assets))
-        return {"answer": "ok", "decision": "answer", "logs": []}
+def test_database_is_required_for_authenticated_routes(monkeypatch):
+    from fastapi import HTTPException
+    from multimodal_agent import app as app_module
 
-    monkeypatch.setattr(graph_module, "run_agent", fake_agent)
-    graph = graph_module.build_graph()
-    config = {"configurable": {"thread_id": "memory"}}
+    monkeypatch.setattr(app_module.database, "enabled", lambda: False)
 
-    graph.invoke(
-        {
-            "request": "Remember this file.",
-            "uploads": [],
-            "assets": [{
-                "id": "pdf-1",
-                "kind": "pdf",
-                "name": "links.pdf",
-                "content": "nine links",
-            }],
-        },
-        config,
-    )
-    graph.invoke(
-        {"request": "How many links are there?", "uploads": []},
-        config,
-    )
-
-    assert seen[-1][1][0]["id"] == "pdf-1"
+    try:
+        app_module.current_user("Bearer token")
+    except HTTPException as error:
+        assert error.status_code == 503
+    else:
+        raise AssertionError("database-free authentication was allowed")
 
 
-def test_hybrid_retrieval_keeps_relevant_tail_content(monkeypatch):
+def test_chunking_keeps_relevant_tail_content(monkeypatch):
     from multimodal_agent import retrieval
 
     monkeypatch.setattr(retrieval, "CHUNK_SIZE", 120)
     monkeypatch.setattr(retrieval, "CHUNK_OVERLAP", 20)
-    monkeypatch.setattr(retrieval, "_semantic_ranks", lambda parts, query: [])
     content = ("irrelevant introduction " * 30) + "Section 302 IPC punishment is life imprisonment."
 
-    result = retrieval.hybrid_search(content, "Section 302 IPC punishment", top_k=2)
+    parts = retrieval.chunks(content)
 
-    assert "life imprisonment" in result
-    assert "content shortened" not in result
-
+    assert "life imprisonment" in parts[-1]
+    assert "".join(part for part in parts if part) != ""
 
 def test_agent_passes_complete_tool_result(monkeypatch):
     api_calls = []
@@ -385,70 +367,35 @@ def test_agent_passes_complete_tool_result(monkeypatch):
     assert any("Retrieval | pdf-1 | hybrid" in log for log in result["logs"])
 
 
+
 def test_pdf_discovered_youtube_assets_are_not_preloaded(monkeypatch):
-    seen = []
     discovered_assets = [
-        {
-            "id": "pdf-1",
-            "kind": "pdf",
-            "name": "links.pdf",
-            "content": "A PDF with two video references.",
-        },
-        {
-            "id": "youtube-1",
-            "kind": "youtube",
-            "name": "https://youtu.be/one",
-            "content": "",
-        },
-        {
-            "id": "youtube-2",
-            "kind": "youtube",
-            "name": "https://youtu.be/two",
-            "content": "",
-        },
+        {"id": "pdf-1", "kind": "pdf", "name": "links.pdf", "content": "PDF"},
+        {"id": "youtube-1", "kind": "youtube", "name": "https://youtu.be/one", "content": ""},
+        {"id": "youtube-2", "kind": "youtube", "name": "https://youtu.be/two", "content": ""},
     ]
+    monkeypatch.setattr(graph_module, "ingest_upload", lambda upload, existing: discovered_assets)
 
-    monkeypatch.setattr(
-        graph_module,
-        "ingest_upload",
-        lambda upload, existing: discovered_assets,
-    )
-    monkeypatch.setattr(
-        graph_module,
-        "run_agent",
-        lambda request, assets, history, current_asset_ids: (
-            seen.append((assets, current_asset_ids))
-            or {"answer": "ok", "decision": "answer", "logs": []}
-        ),
-    )
-    graph = graph_module.build_graph()
-
-    graph.invoke(
-        {
-            "request": "What is this PDF about?",
-            "uploads": [{"name": "links.pdf", "data": b"pdf"}],
-        },
-        {"configurable": {"thread_id": "lazy-youtube"}},
+    assets, current_asset_ids = graph_module.ingest_assets(
+        "What is this PDF about?",
+        [{"name": "links.pdf", "data": b"pdf"}],
+        [],
+        True,
     )
 
-    assert len(seen[0][0]) == 3
-    assert seen[0][1] == ["pdf-1"]
+    assert len(assets) == 3
+    assert current_asset_ids == ["pdf-1"]
+    assert assets[1]["content"] == assets[2]["content"] == ""
 
 
 
-def test_rag_threshold_requires_large_pdf_with_more_than_five_pages():
-    from multimodal_agent.retrieval import needs_hybrid_retrieval
+def test_rag_threshold_is_based_on_configured_content_size(monkeypatch):
+    from multimodal_agent import retrieval
 
-    five_page_pdf = "\n".join(
-        f"--- Page {page} ---\n" + "content " * 300
-        for page in range(1, 6)
-    )
-    six_page_pdf = five_page_pdf + "\n--- Page 6 ---\n" + "content " * 300
+    monkeypatch.setattr(retrieval, "RAG_MIN_CHARS", 100)
 
-    assert len(five_page_pdf) > 10_000
-    assert not needs_hybrid_retrieval("pdf", five_page_pdf)
-    assert needs_hybrid_retrieval("pdf", six_page_pdf)
-    assert needs_hybrid_retrieval("youtube", "transcript " * 1000)
+    assert not retrieval.needs_hybrid_retrieval("x" * 100)
+    assert retrieval.needs_hybrid_retrieval("x" * 101)
 
 
 def test_database_asset_uses_persistent_hybrid_search(monkeypatch):
@@ -509,3 +456,154 @@ def test_database_clean_text_removes_postgres_unsafe_characters():
 
     value = "hello\x00world\x01\n\t!" + chr(0xD800)
     assert clean_text(value) == "helloworld\n\t!?"
+
+
+def test_database_chat_persists_assets_before_agent(monkeypatch):
+    import asyncio
+    import uuid
+    from multimodal_agent import app as app_module
+
+    order = []
+    added = {"id": "pdf-1", "kind": "pdf", "name": "file.pdf", "content": "content"}
+    monkeypatch.setattr(app_module.database, "enabled", lambda: True)
+    monkeypatch.setattr(app_module.database, "ensure_thread", lambda *args: None)
+    monkeypatch.setattr(app_module.database, "load_thread", lambda *args: ([], []))
+    monkeypatch.setattr(
+        app_module,
+        "ingest_assets",
+        lambda *args: ([added], ["pdf-1"]),
+    )
+
+    def save_assets(*args):
+        order.append("save_assets")
+        added["db_id"] = "asset-uuid"
+
+    def run_agent(*args):
+        order.append("run_agent")
+        assert added["db_id"] == "asset-uuid"
+        return {"answer": "done", "decision": "answer", "logs": []}
+
+    monkeypatch.setattr(app_module.database, "save_assets", save_assets)
+    monkeypatch.setattr(app_module, "run_agent", run_agent)
+    monkeypatch.setattr(app_module.database, "save_messages", lambda *args: order.append("save_messages"))
+
+    result = asyncio.run(
+        app_module.chat(
+            message="question",
+            thread_id=str(uuid.uuid4()),
+            files=[],
+            user={"id": "user-1"},
+        )
+    )
+
+    assert result["answer"] == "done"
+    assert order == ["save_assets", "run_agent", "save_messages"]
+
+
+def test_database_asset_does_not_fall_back_to_memory_search(monkeypatch):
+    from multimodal_agent import database
+
+    content = "evidence " * 2000
+    asset = {
+        "db_id": "asset-uuid",
+        "id": "pdf-1",
+        "kind": "pdf",
+        "name": "large.pdf",
+        "content": "\n".join(
+            f"--- Page {page} ---\n{content}" for page in range(1, 7)
+        ),
+    }
+    monkeypatch.setattr(database, "enabled", lambda: True)
+    monkeypatch.setattr(database, "hybrid_search", lambda *args: None)
+    result = asset_reader.run_tool(
+        "read_asset",
+        {"asset_id": "pdf-1", "query": "evidence"},
+        {"pdf-1": asset},
+    )
+
+    assert result == "No content matched that query."
+
+
+def test_lazy_youtube_is_persisted_before_database_retrieval(monkeypatch):
+    from multimodal_agent import database
+
+    events = []
+    asset = {
+        "db_id": "asset-uuid",
+        "id": "youtube-1",
+        "kind": "youtube",
+        "name": "https://youtu.be/example",
+        "content": "",
+    }
+    monkeypatch.setattr(asset_reader, "youtube_text", lambda url: "transcript " * 1000)
+    monkeypatch.setattr(database, "enabled", lambda: True)
+    monkeypatch.setattr(database, "update_asset_content", lambda value: events.append("persist"))
+    monkeypatch.setattr(database, "hybrid_search", lambda *args: events.append("search") or "database evidence")
+
+    result = asset_reader.run_tool(
+        "read_asset",
+        {"asset_id": "youtube-1", "query": "specific lyric"},
+        {"youtube-1": asset},
+    )
+
+    assert result == "database evidence"
+    assert events == ["persist", "search"]
+
+
+
+def test_whole_document_request_uses_configured_hybrid_overview(monkeypatch):
+    from multimodal_agent import database
+
+    calls = []
+    asset = {
+        "db_id": "asset-uuid",
+        "id": "pdf-1",
+        "kind": "pdf",
+        "name": "large.pdf",
+        "content": "content " * 2000,
+    }
+    monkeypatch.setattr(
+        database,
+        "hybrid_search",
+        lambda asset_id, query, top_k: calls.append((asset_id, query, top_k)) or "overview evidence",
+    )
+
+    result = asset_reader.run_tool(
+        "read_asset",
+        {"asset_id": "pdf-1", "query": "Summarize the whole document", "scope": "whole"},
+        {"pdf-1": asset},
+    )
+
+    assert result == "overview evidence"
+    assert calls[0][0] == "asset-uuid"
+    assert "Summarize the whole document" in calls[0][1]
+    assert asset_reader.WHOLE_DOCUMENT_QUERY in calls[0][1]
+    assert calls[0][2] == asset_reader.RETRIEVAL_TOP_K
+
+
+def test_long_whole_asset_with_null_query_never_returns_full_content(monkeypatch):
+    from multimodal_agent import database
+
+    calls = []
+    asset = {
+        "db_id": "asset-uuid",
+        "id": "pdf-1",
+        "kind": "pdf",
+        "name": "large.pdf",
+        "content": "private source content " * 1000,
+    }
+    monkeypatch.setattr(
+        database,
+        "hybrid_search",
+        lambda asset_id, query, top_k: calls.append((query, top_k)) or "bounded evidence",
+    )
+
+    result = asset_reader.run_tool(
+        "read_asset",
+        {"asset_id": "pdf-1", "query": None, "scope": "whole"},
+        {"pdf-1": asset},
+    )
+
+    assert result == "bounded evidence"
+    assert calls == [(asset_reader.WHOLE_DOCUMENT_QUERY, asset_reader.RETRIEVAL_TOP_K)]
+    assert result != asset["content"]
