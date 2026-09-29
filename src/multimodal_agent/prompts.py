@@ -23,6 +23,8 @@ For images:
 For audio and YouTube:
 - Read the transcript with a query that reflects the user's question before answering.
 - YouTube transcripts are downloaded only when first requested.
+- Resolve numbered references from the `[youtube #N]` labels in Available assets.
+- Resolve phrases such as "this video" from the most recent conversation history.
 - The transcript does not reliably provide the video title, channel name,
   duration, or timestamps. State that these are unavailable unless the
   retrieved evidence explicitly contains them.

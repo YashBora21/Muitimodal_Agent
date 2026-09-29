@@ -1,4 +1,4 @@
-import io
+﻿import io
 import wave
 from types import SimpleNamespace
 
@@ -325,6 +325,10 @@ def test_agent_passes_complete_tool_result(monkeypatch):
             api_calls.append(kwargs)
             if len(api_calls) == 2:
                 assert kwargs["messages"][-1]["content"] == complete_result
+                assert any(
+                    complete_result in item.get("content", "")
+                    for item in kwargs["messages"]
+                )
                 message = SimpleNamespace(content="grounded answer", tool_calls=[])
             else:
                 tool_call = SimpleNamespace(
@@ -607,3 +611,83 @@ def test_long_whole_asset_with_null_query_never_returns_full_content(monkeypatch
     assert result == "bounded evidence"
     assert calls == [(asset_reader.WHOLE_DOCUMENT_QUERY, asset_reader.RETRIEVAL_TOP_K)]
     assert result != asset["content"]
+
+
+
+
+def test_asset_index_gives_model_stable_youtube_numbers():
+    from multimodal_agent.registry import asset_index
+
+    assets = [
+        {"id": "pdf-1", "kind": "pdf", "name": "links.pdf"},
+        *[
+            {"id": f"youtube-{number}", "kind": "youtube", "name": f"url-{number}"}
+            for number in range(1, 9)
+        ],
+    ]
+
+    index = asset_index(assets)
+
+    assert "youtube-5: youtube [youtube #5]" in index
+    assert "youtube-7: youtube [youtube #7]" in index
+
+def test_distinct_asset_reads_are_not_limited(monkeypatch):
+    api_calls = []
+    tool_runs = []
+
+    class Completions:
+        def create(self, **kwargs):
+            api_calls.append(kwargs)
+            if len(api_calls) == 2:
+                message = SimpleNamespace(content="done", tool_calls=[])
+            else:
+                tool_calls = []
+                for number in range(1, 6):
+                    arguments = (
+                        '{"asset_id": "youtube-1", "query": "query '
+                        + str(number)
+                        + '"}'
+                    )
+                    tool_calls.append(
+                        SimpleNamespace(
+                            id=f"call-{number}",
+                            function=SimpleNamespace(
+                                name="read_asset", arguments=arguments
+                            ),
+                            model_dump=lambda number=number, arguments=arguments: {
+                                "id": f"call-{number}",
+                                "type": "function",
+                                "function": {
+                                    "name": "read_asset",
+                                    "arguments": arguments,
+                                },
+                            },
+                        )
+                    )
+                message = SimpleNamespace(content="", tool_calls=tool_calls)
+            return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+
+    monkeypatch.setattr(
+        graph_module,
+        "client",
+        lambda: SimpleNamespace(chat=SimpleNamespace(completions=Completions())),
+    )
+    monkeypatch.setattr(
+        graph_module,
+        "run_tool",
+        lambda name, args, assets: tool_runs.append(args) or "grounded evidence",
+    )
+    asset = {
+        "id": "youtube-1",
+        "kind": "youtube",
+        "name": "https://youtu.be/example",
+        "content": "transcript",
+    }
+
+    result = graph_module.run_agent("Explain the video", [asset], [])
+
+    assert result["answer"] == "done"
+    assert len(tool_runs) == 5
+    assert not any("read limit reached" in log for log in result["logs"])
+
+

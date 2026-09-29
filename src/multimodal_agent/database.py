@@ -13,8 +13,8 @@ from .retrieval import chunks, needs_hybrid_retrieval
 
 logger = logging.getLogger(__name__)
 
-load_dotenv()
 
+load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 DIRECT_DATABASE_URL = os.getenv("DATABASE_URL_UNPOOLED", DATABASE_URL)
